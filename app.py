@@ -115,7 +115,7 @@ def home():
                 <div class="alert alert-success text-center" role="alert">
                     <h4 class="alert-heading">✓ ISOLATED SYSTEM v3.0</h4>
                     <p class="mb-2">Zero video switching + Fast 1MB chunk loading</p>
-                    <p class="mb-2"><strong>✓ Chrome Browser</strong> + <strong>✓ External Players</strong> (VLC, MPV, etc.)</p>
+                    <p class="mb-2"><strong>✓ Chrome Browser</strong> + <strong>✓ External Players</strong> (VLC, MPV, MX Player, etc.)</p>
                     <hr>
                     <p class="mb-0 small">
                         <strong>Session:</strong> {active_session or 'None'} | 
@@ -168,6 +168,20 @@ def home():
                                     📋 Copy
                                 </button>
                             </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><strong>MX Player Optimized:</strong></label>
+                            <div class="input-group">
+                                <input type="text" value="http://{host_ip}:5000/mx" readonly 
+                                       class="form-control font-monospace" onclick="this.select()">
+                                <button class="btn btn-outline-success" type="button" 
+                                        onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">
+                                    📋 Copy
+                                </button>
+                            </div>
+                        </div>
+                        <div class="alert alert-info mt-3">
+                            <strong>For MX Player:</strong> Use the MX Player Optimized link above, or add ?url=YOUR_VIDEO_URL to any endpoint
                         </div>
                     </div>
                 </div>
@@ -316,7 +330,29 @@ def video():
         response.headers['Access-Control-Allow-Headers'] = 'Range, Content-Type, Authorization'
         response.headers['Access-Control-Max-Age'] = '86400'
         return response
+    
     video_url = get_current_video_url()
+    
+    # Check for URL parameter for direct streaming (MX Player support)
+    url_param = request.args.get('url')
+    if url_param:
+        logger.info(f"Direct URL streaming request from: {request.headers.get('User-Agent', 'Unknown')}")
+        return stream_video(url_param, mode='standard')
+    
+    if not video_url:
+        # Handle MX Player and other external players when no video URL is set
+        user_agent = request.headers.get('User-Agent', '')
+        if 'MX Player' in user_agent or 'mxplayer' in user_agent.lower():
+            return Response(
+                "MX Player Support: Add ?url=YOUR_VIDEO_URL to this endpoint or set video URL on main page first",
+                status=400,
+                headers={
+                    'Content-Type': 'text/plain',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            )
+        return redirect('/')
+    
     return stream_video(video_url, mode='standard')
 
 @app.route('/fast', methods=['GET', 'HEAD', 'OPTIONS'])
@@ -330,7 +366,29 @@ def fast_video():
         response.headers['Access-Control-Allow-Headers'] = 'Range, Content-Type, Authorization'
         response.headers['Access-Control-Max-Age'] = '86400'
         return response
+    
     video_url = get_current_video_url()
+    
+    # Check for URL parameter for direct streaming (MX Player support)
+    url_param = request.args.get('url')
+    if url_param:
+        logger.info(f"Direct URL fast streaming request from: {request.headers.get('User-Agent', 'Unknown')}")
+        return stream_video(url_param, mode='fast')
+    
+    if not video_url:
+        # Handle MX Player and other external players when no video URL is set
+        user_agent = request.headers.get('User-Agent', '')
+        if 'MX Player' in user_agent or 'mxplayer' in user_agent.lower():
+            return Response(
+                "MX Player Support: Add ?url=YOUR_VIDEO_URL to this endpoint or set video URL on main page first",
+                status=400,
+                headers={
+                    'Content-Type': 'text/plain',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            )
+        return redirect('/')
+    
     return stream_video(video_url, mode='fast')
 
 @app.route('/proxy/<path:url>')
@@ -341,6 +399,129 @@ def proxy_video(url):
         decoded_url = 'https://' + decoded_url
     logger.info(f"Proxy request: {decoded_url[:50]}...")
     return stream_video(decoded_url, mode='fast')
+
+@app.route('/mx', methods=['GET', 'HEAD', 'OPTIONS'])
+def mx_player_stream():
+    """MX Player optimized streaming endpoint"""
+    if request.method == 'OPTIONS':
+        response = Response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Range, Content-Type, Authorization'
+        response.headers['Access-Control-Max-Age'] = '86400'
+        return response
+    
+    # Get URL from parameter - MX Player direct support
+    url_param = request.args.get('url')
+    if not url_param:
+        video_url = get_current_video_url()
+        if not video_url:
+            return Response(
+                "MX Player Endpoint: Add ?url=YOUR_VIDEO_URL parameter to this endpoint",
+                status=400,
+                headers={
+                    'Content-Type': 'text/plain',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            )
+        url_param = video_url
+    
+    logger.info(f"MX Player stream request: {url_param[:50]}... from {request.headers.get('User-Agent', 'Unknown')}")
+    
+    # Stream with MX Player optimized mode
+    return stream_video_mx_optimized(url_param)
+
+def stream_video_mx_optimized(video_url):
+    """Specialized MX Player streaming function"""
+    try:
+        # Simple, direct streaming optimized for MX Player
+        session_obj = requests.Session()
+        session_obj.headers.update({
+            'User-Agent': 'MXPlayer/1.46.15 (Android)',
+            'Accept': 'video/mp4,video/*,*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Connection': 'keep-alive',
+            'Accept-Encoding': 'identity',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        })
+        
+        range_header = request.headers.get('Range')
+        if range_header:
+            session_obj.headers['Range'] = range_header
+        
+        response = session_obj.get(video_url, stream=True, timeout=30)
+        response.raise_for_status()
+        
+        content_type = response.headers.get('Content-Type', 'video/mp4')
+        
+        # Force video/mp4 for maximum MX Player compatibility
+        if not content_type.startswith('video/'):
+            content_type = 'video/mp4'
+        
+        # Handle HEAD requests - MX Player checks video info first
+        if request.method == 'HEAD':
+            resp_headers = {
+                'Content-Type': content_type,
+                'Accept-Ranges': 'bytes',
+                'Connection': 'keep-alive',
+                'X-MX-Player-Compatible': 'true',
+                'X-Android-Compatible': 'true',
+                'Access-Control-Allow-Origin': '*',
+                'Content-Disposition': 'inline; filename="video.mp4"'
+            }
+            
+            # Copy essential headers
+            for header in ['Content-Length', 'Content-Range', 'Last-Modified', 'ETag']:
+                if header in response.headers:
+                    resp_headers[header] = response.headers[header]
+            
+            return Response('', headers=resp_headers, mimetype=content_type)
+        
+        # Stream video data
+        def generate():
+            try:
+                for chunk in response.iter_content(chunk_size=FAST_CHUNK_SIZE):
+                    if chunk:
+                        yield chunk
+            except Exception as e:
+                logger.error(f"MX Player streaming error: {e}")
+                raise
+        
+        # Response headers optimized for MX Player
+        resp_headers = {
+            'Content-Type': content_type,
+            'Accept-Ranges': 'bytes',
+            'Connection': 'keep-alive',
+            'X-MX-Player-Compatible': 'true',
+            'X-Android-Compatible': 'true',
+            'X-Video-Direct-Stream': 'true',
+            'Access-Control-Allow-Origin': '*',
+            'Content-Disposition': 'inline; filename="video.mp4"',
+            'Cache-Control': 'no-cache'
+        }
+        
+        # Copy essential headers from source
+        for header in ['Content-Length', 'Content-Range', 'Last-Modified', 'ETag']:
+            if header in response.headers:
+                resp_headers[header] = response.headers[header]
+        
+        logger.info(f"MX Player stream initiated - Status: {response.status_code}")
+        
+        return Response(
+            generate(),
+            response.status_code,
+            headers=resp_headers,
+            mimetype=content_type
+        )
+        
+    except Exception as e:
+        logger.error(f"MX Player streaming error: {e}")
+        return Response(
+            f"MX Player streaming error: {str(e)}",
+            status=500,
+            mimetype='text/plain'
+        )
 
 @app.route('/test-isolation')
 def test_isolation():
@@ -411,6 +592,15 @@ def health_check():
         'version': '3.0'
     })
 
+@app.route('/keepalive')
+def keepalive():
+    """Keep-alive endpoint to prevent server sleep"""
+    return jsonify({
+        'status': 'alive',
+        'timestamp': datetime.now().isoformat(),
+        'active_sessions': len(video_sessions)
+    })
+
 def stream_video(video_url, mode='standard'):
     """ISOLATED FAST STREAMING - Prevents video switching with rapid loading"""
     def generate_stream():
@@ -447,15 +637,31 @@ def stream_video(video_url, mode='standard'):
                 actual_video_url = video_url
                 logger.info(f"Created new isolated session: {active_session_id} with URL: {actual_video_url[:50]}...")
             
-            # FAST STREAMING REQUEST
+            # FAST STREAMING REQUEST WITH MX PLAYER OPTIMIZATION
             range_header = request.headers.get('Range')
+            user_agent = request.headers.get('User-Agent', '')
+            is_mx_player = 'MX Player' in user_agent or 'mxplayer' in user_agent.lower()
+            
+            # Enhanced MX Player detection
+            is_android_player = any(x in user_agent.lower() for x in ['android', 'mobile', 'mxplayer'])
+            
             headers = {
-                'User-Agent': f'FastStreamProxy-{active_session_id or "fallback"}/3.0',
+                'User-Agent': f'FastStreamProxy-{active_session_id or "fallback"}/3.0' if not is_mx_player else 'MXPlayer/1.46.15',
                 'Accept': '*/*',
                 'Connection': 'keep-alive',
                 'Accept-Encoding': 'identity',
                 'Referer': 'https://moviebox.ng/',
             }
+            
+            # MX Player requires specific headers for proper playback
+            if is_mx_player or is_android_player:
+                headers.update({
+                    'User-Agent': 'MXPlayer/1.46.15 (Android)',
+                    'Accept': 'video/mp4,video/*,*/*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                })
             
             if range_header:
                 headers['Range'] = range_header
@@ -486,27 +692,50 @@ def stream_video(video_url, mode='standard'):
                     logger.error(f"Streaming error: {e}")
                     raise
             
-            # Handle HEAD requests for external players
+            # Handle HEAD requests for external players including MX Player
             if request.method == 'HEAD':
+                content_type = response.headers.get('Content-Type', 'video/mp4')
                 resp_headers = {
-                    'Content-Type': response.headers.get('Content-Type', 'video/mp4'),
+                    'Content-Type': content_type,
                     'Accept-Ranges': 'bytes',
                     'Access-Control-Allow-Origin': '*',
                     'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+                    'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization, User-Agent',
                     'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
-                    'Content-Disposition': 'inline',
-                    'X-Content-Type-Options': 'nosniff'
+                    'Content-Disposition': f'inline; filename="video.{content_type.split("/")[-1] if "/" in content_type else "mp4"}"',
+                    'X-Content-Type-Options': 'nosniff',
+                    'Connection': 'keep-alive',
+                    'Server': 'nginx/1.18.0',
+                    'Cache-Control': 'no-cache'
                 }
-                # Copy essential headers
+                
+                # Copy essential headers from source
                 for header in ['Content-Length', 'Content-Range', 'Last-Modified', 'ETag']:
                     if header in response.headers:
                         resp_headers[header] = response.headers[header]
-                return Response('', headers=resp_headers, mimetype=response.headers.get('Content-Type', 'video/mp4'))
+                
+                # Enhanced MX Player specific optimizations
+                if is_mx_player or is_android_player:
+                    resp_headers.update({
+                        'X-MX-Player-Compatible': 'true',
+                        'Transfer-Encoding': 'identity',
+                        'X-Android-Compatible': 'true',
+                        'X-Video-Direct-Stream': 'true',
+                        'Vary': 'Accept-Encoding',
+                        'Content-Security-Policy': 'default-src *'
+                    })
+                    # Force video/mp4 for better compatibility
+                    if not content_type.startswith('video/'):
+                        resp_headers['Content-Type'] = 'video/mp4'
+                        content_type = 'video/mp4'
+                    
+                return Response('', headers=resp_headers, mimetype=content_type)
             
-            # PREPARE RESPONSE HEADERS FOR BOTH BROWSER AND EXTERNAL PLAYERS
+            # PREPARE RESPONSE HEADERS FOR BROWSERS, EXTERNAL PLAYERS AND MX PLAYER
+            content_type = response.headers.get('Content-Type', 'video/mp4')
+            
             resp_headers = {
-                'Content-Type': response.headers.get('Content-Type', 'video/mp4'),
+                'Content-Type': content_type,
                 'Accept-Ranges': 'bytes',
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
                 'Pragma': 'no-cache',
@@ -517,11 +746,32 @@ def stream_video(video_url, mode='standard'):
                 # External player compatibility headers
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-                'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+                'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization, User-Agent',
                 'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
-                'Content-Disposition': 'inline',
-                'X-Content-Type-Options': 'nosniff'
+                'Content-Disposition': 'inline; filename="video.mp4"',
+                'X-Content-Type-Options': 'nosniff',
+                # MX Player and mobile player specific headers
+                'Connection': 'keep-alive',
+                'Transfer-Encoding': 'identity',
+                'Server': 'nginx/1.18.0',
+                'X-Frame-Options': 'SAMEORIGIN',
+                'Vary': 'Accept-Encoding'
             }
+            
+            # Enhanced MX Player compatibility headers
+            if is_mx_player or is_android_player:
+                resp_headers.update({
+                    'X-MX-Player-Compatible': 'true',
+                    'X-Android-Compatible': 'true',
+                    'X-Video-Direct-Stream': 'true',
+                    'Content-Security-Policy': 'default-src *',
+                    'X-Content-Type-Options': 'nosniff'
+                })
+                # Force video/mp4 for better compatibility
+                if not content_type.startswith('video/'):
+                    resp_headers['Content-Type'] = 'video/mp4'
+                    content_type = 'video/mp4'
+                logger.info(f"MX Player request detected, optimized headers applied")
             
             # COPY ESSENTIAL HEADERS FROM SOURCE
             for header in ['Content-Length', 'Content-Range', 'Last-Modified', 'ETag']:
