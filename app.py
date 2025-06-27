@@ -94,7 +94,12 @@ def measure_network_speed():
 
 @app.route('/')
 def home():
-    host_ip = request.host.split(':')[0]
+    # Use proper external URL for Replit deployment
+    if 'replit.dev' in request.host or 'replit.app' in request.host:
+        base_url = f"https://{request.host}"
+    else:
+        base_url = f"http://{request.host}"
+    
     current_url = get_current_video_url()
     active_session = get_active_session_id()
     cache_buster = session.get('cache_buster', 0)
@@ -105,6 +110,23 @@ def home():
     <title>Isolated Fast Video Streaming</title>
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>
+        // Keep-alive mechanism to prevent app from going offline
+        setInterval(function() {{
+            fetch('/keepalive', {{method: 'GET'}}).catch(function(error) {{
+                console.log('Keep-alive ping failed:', error);
+            }});
+        }}, 30000); // Ping every 30 seconds
+        
+        // Also ping when page becomes visible again
+        document.addEventListener('visibilitychange', function() {{
+            if (!document.hidden) {{
+                fetch('/keepalive', {{method: 'GET'}}).catch(function(error) {{
+                    console.log('Visibility ping failed:', error);
+                }});
+            }}
+        }});
+    </script>
 </head>
 <body>
     <div class="container mt-4">
@@ -144,13 +166,13 @@ def home():
 
                 <div class="card mb-4">
                     <div class="card-header">
-                        <h5 class="card-title mb-0">🚀 Fast Streaming URLs</h5>
+                        <h5 class="card-title mb-0">🎬 Chrome Browser URLs</h5>
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
                             <label class="form-label"><strong>Primary (1MB chunks):</strong></label>
                             <div class="input-group">
-                                <input type="text" value="http://{host_ip}:5000/video" readonly 
+                                <input type="text" value="{base_url}/video" readonly 
                                        class="form-control font-monospace" onclick="this.select()">
                                 <button class="btn btn-outline-secondary" type="button" 
                                         onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">
@@ -161,7 +183,7 @@ def home():
                         <div class="mb-3">
                             <label class="form-label"><strong>Fast Mode (Instant loading):</strong></label>
                             <div class="input-group">
-                                <input type="text" value="http://{host_ip}:5000/fast" readonly 
+                                <input type="text" value="{base_url}/fast" readonly 
                                        class="form-control font-monospace" onclick="this.select()">
                                 <button class="btn btn-outline-secondary" type="button" 
                                         onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">
@@ -169,19 +191,19 @@ def home():
                                 </button>
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label"><strong>MX Player Optimized:</strong></label>
-                            <div class="input-group">
-                                <input type="text" value="http://{host_ip}:5000/mx" readonly 
-                                       class="form-control font-monospace" onclick="this.select()">
-                                <button class="btn btn-outline-success" type="button" 
-                                        onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">
-                                    📋 Copy
-                                </button>
-                            </div>
-                        </div>
-                        <div class="alert alert-info mt-3">
-                            <strong>For MX Player:</strong> Use the MX Player Optimized link above, or add ?url=YOUR_VIDEO_URL to any endpoint
+                    </div>
+                </div>
+
+                <div class="card mb-4 border-success">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="card-title mb-0">📱 MX Player URLs (Use these for MX Player!)</h5>
+                    </div>
+                    <div class="card-body">
+                        {'<div class="mb-3"><label class="form-label"><strong>MX Player Optimized:</strong></label><div class="input-group"><input type="text" value="' + base_url + '/mx?url=' + (current_url or 'SET_VIDEO_URL_FIRST') + '" readonly class="form-control font-monospace" onclick="this.select()"><button class="btn btn-success" type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">📋 Copy for MX Player</button></div></div>' if current_url else '<div class="alert alert-warning"><strong>Set video URL first</strong> to generate MX Player links</div>'}
+                        {'<div class="mb-3"><label class="form-label"><strong>Standard with URL:</strong></label><div class="input-group"><input type="text" value="' + base_url + '/video?url=' + (current_url or 'SET_VIDEO_URL_FIRST') + '" readonly class="form-control font-monospace small" onclick="this.select()"><button class="btn btn-outline-success" type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">📋 Copy</button></div></div>' if current_url else ''}
+                        {'<div class="mb-0"><label class="form-label"><strong>Fast with URL:</strong></label><div class="input-group"><input type="text" value="' + base_url + '/fast?url=' + (current_url or 'SET_VIDEO_URL_FIRST') + '" readonly class="form-control font-monospace small" onclick="this.select()"><button class="btn btn-outline-success" type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">📋 Copy</button></div></div>' if current_url else ''}
+                        <div class="alert alert-info mt-3 mb-0">
+                            <strong>⚠️ Important:</strong> For MX Player, you MUST use the URLs above that include "?url=" parameter. The Chrome browser URLs won't work in MX Player.
                         </div>
                     </div>
                 </div>
@@ -254,7 +276,11 @@ def set_video():
         logger.info(f"ALL OLD SESSIONS DESTROYED")
         logger.info(f"NEW VIDEO ISOLATED: {new_url[:50]}...")
         
-        host_ip = request.host.split(':')[0]
+        # Use proper external URL for Replit deployment
+        if 'replit.dev' in request.host or 'replit.app' in request.host:
+            base_url = f"https://{request.host}"
+        else:
+            base_url = f"http://{request.host}"
         return f"""
 <!DOCTYPE html>
 <html>
@@ -295,11 +321,11 @@ def set_video():
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
-                            <input type="text" value="http://{host_ip}:5000/video" readonly 
+                            <input type="text" value="{base_url}/video" readonly 
                                    class="form-control font-monospace" onclick="this.select()">
                         </div>
                         <div class="mb-0">
-                            <input type="text" value="http://{host_ip}:5000/fast" readonly 
+                            <input type="text" value="{base_url}/fast" readonly 
                                    class="form-control font-monospace" onclick="this.select()">
                         </div>
                     </div>
